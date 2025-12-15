@@ -1,0 +1,321 @@
+package com.swirlysys.gamepadhotbar.mixin.client;
+
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.math.Axis;
+import com.swirlysys.gamepadhotbar.GamepadHotbar;
+import com.swirlysys.gamepadhotbar.GamepadHotbarClient;
+import com.swirlysys.gamepadhotbar.config.GamepadHotbarClientConfig;
+import com.swirlysys.gamepadhotbar.util.HotbarPos;
+import com.swirlysys.gamepadhotbar.util.HotbarScale;
+import net.minecraft.client.AttackIndicatorStatus;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import org.joml.Vector2i;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(Gui.class)
+public class HotbarMixin {
+    @Unique
+    private static final ResourceLocation HOTBAR_SPRITE = ResourceLocation.withDefaultNamespace("hud/hotbar");
+    @Unique
+    private static final ResourceLocation HOTBAR_SELECTION_SPRITE = ResourceLocation.withDefaultNamespace("hud/hotbar_selection");
+    @Unique
+    private static final ResourceLocation HOTBAR_OFFHAND_LEFT_SPRITE = ResourceLocation.withDefaultNamespace("hud/hotbar_offhand_left");
+    @Unique
+    private static final ResourceLocation HOTBAR_OFFHAND_RIGHT_SPRITE = ResourceLocation.withDefaultNamespace("hud/hotbar_offhand_right");
+    @Unique
+    private static final ResourceLocation TAP_HOTBAR_LEFT = ResourceLocation.fromNamespaceAndPath(GamepadHotbar.MOD_ID, "hud/tap_hotbar_left");
+    @Unique
+    private static final ResourceLocation TAP_HOTBAR_UP = ResourceLocation.fromNamespaceAndPath(GamepadHotbar.MOD_ID, "hud/tap_hotbar_up");
+    @Unique
+    private static final ResourceLocation TAP_HOTBAR_RIGHT = ResourceLocation.fromNamespaceAndPath(GamepadHotbar.MOD_ID, "hud/tap_hotbar_right");
+    @Unique
+    private static final ResourceLocation TAP_HOTBAR_DOWN = ResourceLocation.fromNamespaceAndPath(GamepadHotbar.MOD_ID, "hud/tap_hotbar_down");
+    @Unique
+    private static final ResourceLocation HOTBAR_ATTACK_INDICATOR_BACKGROUND_SPRITE = ResourceLocation.withDefaultNamespace(
+            "hud/hotbar_attack_indicator_background"
+    );
+    @Unique
+    private static final ResourceLocation HOTBAR_ATTACK_INDICATOR_PROGRESS_SPRITE = ResourceLocation.withDefaultNamespace(
+            "hud/hotbar_attack_indicator_progress"
+    );
+    @Unique
+    private static Vector2i iteratePos(int index, int scale, int arm) {
+        Vector2i vec = new Vector2i(0, 0);
+        switch (index) {
+            case 1 -> {return vec.add(-41 + scale, -31);}
+            case 2 -> {return vec.add(-20 + scale, -41);}
+            case 3 -> {return vec.add(scale, -41);}
+            case 4 -> {return vec.add(21 + scale, -31);}
+            case 5 -> {return vec.add(21 + scale, -11);}
+            case 6 -> {return vec.add(scale, 0);}
+            case 7 -> {return vec.add(-20 + scale, 0);}
+            case 8 -> {return vec.add(4 - arm - scale, -20);}
+            default -> {return vec.add(-41 + scale, -11);}
+        }
+    }
+    @Unique
+    private static void renderSlot(GuiGraphics guiGraphics, int x, int y, DeltaTracker deltaTracker, Player player, ItemStack stack, int seed) {
+        if (!stack.isEmpty()) {
+            float f = (float)stack.getPopTime() - deltaTracker.getGameTimeDeltaPartialTick(false);
+            if (f > 0.0F) {
+                float f1 = 1.0F + f / 5.0F;
+                guiGraphics.pose().pushPose();
+                guiGraphics.pose().translate((float)(x + 8), (float)(y + 12), 0.0F);
+                guiGraphics.pose().scale(1.0F / f1, (f1 + 1.0F) / 2.0F, 1.0F);
+                guiGraphics.pose().translate((float)(-(x + 8)), (float)(-(y + 12)), 0.0F);
+            }
+
+            guiGraphics.renderItem(player, stack, x, y, seed);
+            if (f > 0.0F) {
+                guiGraphics.pose().popPose();
+            }
+
+            guiGraphics.renderItemDecorations(Minecraft.getInstance().font, stack, x, y);
+        }
+    }
+    
+    @Inject(method = "renderItemHotbar", at = @At("HEAD"), cancellable = true)
+    private void onRenderItemHotbar(GuiGraphics guiGfx, DeltaTracker parTick, CallbackInfo ci) {
+        Minecraft mc = Minecraft.getInstance();
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isFalse() || mc.options.hideGui) return;
+
+        Entity entity = mc.getCameraEntity();
+        if (entity instanceof Player player) {
+            // Vanilla hotbar is not rendered
+            ci.cancel();
+            
+            ItemStack offHand = player.getOffhandItem();
+            HumanoidArm offArm = player.getMainArm().getOpposite();
+
+            // Base variables
+            int screenLeft = 43;
+            int screenRight = guiGfx.guiWidth() - screenLeft;
+            int flipVar1 = 1;
+            int flipVar2 = 0;
+            int scaleVar = GamepadHotbarClientConfig.PAD_X.get();
+
+            // Configuration adjustments
+            if (GamepadHotbarClientConfig.MIRROR_MODE.getAsBoolean()) {
+                screenRight = screenLeft;
+                screenLeft = guiGfx.guiWidth() - screenRight;
+                scaleVar *= -1;
+                flipVar1 *= -1;
+                flipVar2 = 100;
+            }
+            if (GamepadHotbarClientConfig.SCALE_X.get() == HotbarScale.TYPE2) {
+                screenLeft = (guiGfx.guiWidth() / 2) - (140 * flipVar1);
+                screenRight = (guiGfx.guiWidth() / 2) + (140 * flipVar1);
+            }
+            if (GamepadHotbarClientConfig.SCALE_X.get() == HotbarScale.TYPE3) {
+                screenLeft = (guiGfx.guiWidth() / 2) - (50 * flipVar1);
+                screenRight = (guiGfx.guiWidth() / 2) + (50 * flipVar1);
+            }
+            if (GamepadHotbarClientConfig.SCALE_X.get() == HotbarScale.TYPE4) {
+                screenLeft = 43 + flipVar2;
+                screenRight = 143 - flipVar2;
+            }
+            if (GamepadHotbarClientConfig.SCALE_X.get() == HotbarScale.TYPE5) {
+                screenLeft = guiGfx.guiWidth() - 143 + flipVar2;
+                screenRight = guiGfx.guiWidth() - 43 - flipVar2;
+            }
+            int baseY = GamepadHotbarClientConfig.POS_Y.get() == HotbarPos.TOP ? 64 + GamepadHotbarClientConfig.PAD_Y.get() : guiGfx.guiHeight() - GamepadHotbarClientConfig.PAD_Y.get();
+
+            // Adjustment variables
+            int uWidth;
+            int uPos;
+            int xPos;
+            int yPos;
+            int slotY = baseY - 22;
+            int selectY = slotY - 1;
+            int itemY = slotY + 3;
+            int baseX;
+            int armVar = offArm == HumanoidArm.RIGHT ? 28 : 0;
+
+            RenderSystem.enableBlend();
+            guiGfx.pose().pushPose();
+            guiGfx.pose().translate(0.0F, 0.0F, -90.0F);
+
+            // Hotbar slots 1-9
+            // Extra blitSprite calls are made here to fill out each slot pair with the outline portion of the hotbar texture
+            for (int i = 0; i < 5; i++) {
+                switch (i) {
+                    case 1 -> {
+                        //  X X
+                        // .   .
+                        // .   .         .
+                        //  . .
+                        uWidth = 40;
+                        uPos = 41;
+                        xPos = -20 + scaleVar;
+                        yPos = -41;
+                        baseX = screenLeft;
+                        guiGfx.pose().translate(baseX, slotY, 0);
+                        guiGfx.pose().mulPose(Axis.ZP.rotationDegrees(90));
+                        guiGfx.pose().translate(-baseX, -slotY, 0);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 0, 0, baseX + xPos - 1, slotY + yPos, 1, 22);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 181, 0, baseX + xPos + uWidth, slotY + yPos, 1, 22);
+                    }
+                    case 2 -> {
+                        //  . .
+                        // .   X
+                        // .   X         .
+                        //  . .
+                        uWidth = 40;
+                        uPos = 81;
+                        xPos = -30;
+                        yPos = -42 - scaleVar;
+                        baseX = screenLeft;
+                        guiGfx.pose().translate(baseX, slotY, 0);
+                        guiGfx.pose().mulPose(Axis.ZP.rotationDegrees(90));
+                        guiGfx.pose().translate(-baseX, -slotY, 0);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 0, 0, baseX + xPos - 1, slotY + yPos, 1, 22);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 181, 0, baseX + xPos + uWidth, slotY + yPos, 1, 22);
+                    }
+                    case 3 -> {
+                        //  . .
+                        // .   .
+                        // .   .         .
+                        //  X X
+                        uWidth = 40;
+                        uPos = 121;
+                        xPos = -20 + scaleVar;
+                        yPos = 0;
+                        baseX = screenLeft;
+                        guiGfx.pose().translate(baseX, slotY, 0);
+                        guiGfx.pose().mulPose(Axis.ZP.rotationDegrees(-90));
+                        guiGfx.pose().translate(-baseX, -slotY, 0);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 0, 0, baseX + xPos - 1, slotY + yPos, 1, 22);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 181, 0, baseX + xPos + uWidth, slotY + yPos, 1, 22);
+                    }
+                    case 4 -> {
+                        //  . .
+                        // .   .
+                        // .   .         X
+                        //  . .
+                        uWidth = 21;
+                        uPos = 161;
+                        xPos = 4 - armVar - scaleVar;
+                        yPos = -20;
+                        baseX = screenRight;
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 0, 0, baseX + xPos - 1, slotY + yPos, 1, 22);
+                    }
+                    default -> {
+                        //  . .
+                        // X   .
+                        // X   .         .
+                        //  . .
+                        uPos = 0;
+                        uWidth = 41;
+                        xPos = -11;
+                        yPos = -42 + scaleVar;
+                        baseX = screenLeft;
+                        guiGfx.pose().translate(baseX, slotY, 0);
+                        guiGfx.pose().mulPose(Axis.ZP.rotationDegrees(-90));
+                        guiGfx.pose().translate(-baseX, -slotY, 0);
+                        guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22, 181, 0, baseX + xPos + uWidth, slotY + yPos, 1, 22);
+                    }
+                }
+                guiGfx.blitSprite(HOTBAR_SPRITE, 182, 22,
+                        uPos, 0, baseX + xPos, slotY + yPos, uWidth, 22
+                );
+            }
+
+            // Selected hotbar slot
+            int selected = player.getInventory().selected;
+            if (selected >= 0 && selected < 8) baseX = screenLeft;
+            else baseX = screenRight;
+
+            int selectX = baseX - 2;
+            xPos = iteratePos(selected, scaleVar, armVar).x;
+            yPos = iteratePos(selected, scaleVar, armVar).y;
+            guiGfx.blitSprite(HOTBAR_SELECTION_SPRITE, selectX + xPos, selectY + yPos, 24, 23);
+
+            // Off-hand hotbar slot
+            if (!offHand.isEmpty()) {
+                if (offArm == HumanoidArm.LEFT) {
+                    guiGfx.blitSprite(HOTBAR_OFFHAND_LEFT_SPRITE, screenRight + 4 - 29 - scaleVar, slotY - 21, 29, 24);
+                } else {
+                    guiGfx.blitSprite(HOTBAR_OFFHAND_RIGHT_SPRITE, screenRight + 4 - armVar + 20 - scaleVar, slotY - 21, 29, 24);
+                }
+            }
+
+            guiGfx.pose().popPose();
+            RenderSystem.disableBlend();
+
+            // Custom tap button indicator
+            guiGfx.pose().pushPose();
+            ResourceLocation tap = null;
+            int tapOffset = 8;
+            boolean keyFlag = false;
+            if (GamepadHotbarClient.getLeft().isDown() || GamepadHotbarClient.getRight().isDown() || GamepadHotbarClient.getUp().isDown() || GamepadHotbarClient.getDown().isDown()) {
+                guiGfx.setColor(1.0F, 0.8F, 0.0F, 1.0F);
+                keyFlag = true;
+            }
+            if (selected == 0 || selected == 1) {
+                tap = TAP_HOTBAR_LEFT;
+                tapOffset = 17;
+            }
+            if (selected == 2 || selected == 3) {
+                tap = TAP_HOTBAR_UP;
+            }
+            if (selected == 4 || selected == 5) {
+                tap = TAP_HOTBAR_RIGHT;
+                tapOffset = -1;
+            }
+            if (selected == 6 || selected == 7) {
+                tap = TAP_HOTBAR_DOWN;
+            }
+            if (selected >= 0 && selected < 8) {
+                guiGfx.blitSprite(tap, baseX - tapOffset + scaleVar, slotY - 18, 16, 16);
+            }
+            if (keyFlag) guiGfx.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+            guiGfx.pose().popPose();
+
+            // Items
+            int itemX;
+            int l = 1;
+            for (int j = 0; j < 9; j++) {
+                xPos = iteratePos(j, scaleVar, armVar).x;
+                yPos = iteratePos(j, scaleVar, armVar).y;
+                if (j < 8) {
+                    itemX = screenLeft + 2;
+                } else itemX = screenRight + 2;
+                renderSlot(guiGfx, itemX + xPos, itemY + yPos, parTick, player, player.getInventory().items.get(j), l++);
+            }
+
+            // Off-hand slot
+            if (!offHand.isEmpty()) {
+                itemX = screenRight + 2;
+                renderSlot(guiGfx, itemX - 24 + armVar - scaleVar, itemY - 20, parTick, player, offHand, l);
+            }
+
+            // Hotbar attack indicator
+            if (mc.options.attackIndicator().get() == AttackIndicatorStatus.HOTBAR) {
+                RenderSystem.enableBlend();
+                float f = player.getAttackStrengthScale(0.0F);
+                if (f < 1.0F) {
+                    int j2 = baseY - 62;
+                    int k2 = screenRight + 5 - armVar - scaleVar;
+
+                    int l1 = (int)(f * 19.0F);
+                    guiGfx.blitSprite(HOTBAR_ATTACK_INDICATOR_BACKGROUND_SPRITE, k2, j2, 18, 18);
+                    guiGfx.blitSprite(HOTBAR_ATTACK_INDICATOR_PROGRESS_SPRITE, 18, 18, 0, 18 - l1, k2, j2 + 18 - l1, 18, l1);
+                }
+
+                RenderSystem.disableBlend();
+            }
+        }
+    }
+}
