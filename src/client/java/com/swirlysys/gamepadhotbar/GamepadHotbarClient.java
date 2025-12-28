@@ -10,7 +10,6 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
-import org.lwjgl.glfw.GLFW;
 
 public class GamepadHotbarClient implements ClientModInitializer {
     private static KeyMapping left;

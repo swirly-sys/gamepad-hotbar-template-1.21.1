@@ -22,10 +22,11 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(Gui.class)
-public class HotbarMixin {
+public class GuiMixin {
     @Unique
     private static final ResourceLocation HOTBAR_SPRITE = ResourceLocation.withDefaultNamespace("hud/hotbar");
     @Unique
@@ -317,5 +318,43 @@ public class HotbarMixin {
                 RenderSystem.disableBlend();
             }
         }
+    }
+
+    // Gui layers affected by "Lower status display" config
+    @ModifyVariable(method = "renderJumpMeter", at = @At("STORE"), ordinal = 3)
+    private int onRenderJumpMeter(int l) {
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isTrue() && GamepadHotbarClientConfig.LOWER_STATUS.isTrue())
+            return l + 24;
+        return l;
+    }
+    @ModifyVariable(method = "renderExperienceBar", at = @At("STORE"), ordinal = 4)
+    private int onRenderXpBar(int m) {
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isTrue() && GamepadHotbarClientConfig.LOWER_STATUS.isTrue())
+            return m + 24;
+        return m;
+    }
+    @ModifyVariable(method = "renderPlayerHealth", at = @At("STORE"), ordinal = 4)
+    private int onRenderPlayerHealth(int n) {
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isTrue() && GamepadHotbarClientConfig.LOWER_STATUS.isTrue())
+            return n + 24;
+        return n;
+    }
+    @ModifyVariable(method = "renderVehicleHealth", at = @At("STORE"), ordinal = 2)
+    private int onRenderVehicleHealth(int k) {
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isTrue() && GamepadHotbarClientConfig.LOWER_STATUS.isTrue())
+            return k + 24;
+        return k;
+    }
+    @ModifyVariable(method = "renderExperienceLevel", at = @At("STORE"), ordinal = 2)
+    private int onRenderXpLevel(int k) {
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isTrue() && GamepadHotbarClientConfig.LOWER_STATUS.isTrue())
+            return k + 24;
+        return k;
+    }
+    @ModifyVariable(method = "renderSelectedItemName", at = @At("STORE"), ordinal = 2)
+    private int onRenderSelectedItemName(int k) {
+        if (GamepadHotbarClientConfig.GAMEPAD_HOTBAR_TOGGLE.isTrue() && GamepadHotbarClientConfig.LOWER_STATUS.isTrue())
+            return k + 24;
+        return k;
     }
 }
